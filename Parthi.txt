@@ -1,0 +1,101 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using Microsoft.EntityFrameworkCore;
+using React_Native_API.Data;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services to the container.
+builder.Services.AddDbContext<AddDbContext>(options =>
+{
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultDbConnection"));
+});
+
+// Configure JWT authentication
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+}).AddJwtBearer(options =>
+{
+    var secretKey = builder.Configuration["ApiSettings:Secret"];
+
+    if (string.IsNullOrEmpty(secretKey) || secretKey.Length < 32)
+    {
+        throw new InvalidOperationException("The secret key must be at least 32 characters long.");
+    }
+
+    var key = Encoding.UTF8.GetBytes(secretKey);
+
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = "YourIssuer", // Set your issuer
+        ValidAudience = "YourAudience", // Set your audience
+        IssuerSigningKey = new SymmetricSecurityKey(key),
+    };
+});
+
+builder.Services.AddControllers();
+// Swagger/OpenAPI configuration
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+// Add SignalR services
+builder.Services.AddSignalR();
+
+// CORS Policy setup
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("MyPolicy",
+        corsBuilder =>
+        {
+            corsBuilder
+                .WithOrigins("http://localhost:4200", "http://your-frontend-domain.com","https://192.168.4.190:4200","https://192.168.4.22:8007") // Replace with allowed origins
+                .AllowAnyMethod()
+                .AllowAnyHeader()
+                .AllowCredentials(); // Important for SignalR WebSockets
+        });
+});
+
+var app = builder.Build();
+
+// Configure the HTTP request pipeline.
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+if (app.Environment.IsProduction())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+
+// Use the CORS policy you defined
+app.UseCors("MyPolicy");
+
+// Temporarily disable HTTPS redirection for development
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection(); // Only use HTTPS redirection in production
+}
+
+// Ensure routing is used
+app.UseRouting();
+
+// Use authentication and authorization middleware
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Map controllers and SignalR hubs
+app.MapControllers();
+app.MapHub<AudioCallHub>("/callhub"); // Map your hub
+
+app.Run();
